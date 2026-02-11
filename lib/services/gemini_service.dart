@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants.dart';
@@ -11,23 +12,83 @@ class GeminiService {
 
   GenerativeModel? _model;
   String? _apiKey;
+  bool _isInitialized = false;
 
   // 初期化：アプリ起動時や設定変更後に呼ぶ
   Future<void> initialize() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Web版での確実な読み込みのため複数回リロード
-    await prefs.reload();
-    await Future.delayed(const Duration(milliseconds: 100)); // 少し待機
-    await prefs.reload();
-    
-    _apiKey = prefs.getString(AppConstants.apiKeyStorageKey);
-    
-    if (_apiKey != null && _apiKey!.isNotEmpty) {
-      print('GeminiService: API Key loaded from storage: ${_apiKey!.substring(0, 10)}...');
-      _initializeModel();
-    } else {
-      print('GeminiService: No API Key found.');
-      _model = null; // キーがない場合はモデルをクリア
+    if (_isInitialized && _apiKey != null && _apiKey!.isNotEmpty) {
+      print('GeminiService: Already initialized, skipping');
+      return;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Web版での確実な読み込みのため複数回リロード
+      await prefs.reload();
+      await Future.delayed(const Duration(milliseconds: 50));
+      await prefs.reload();
+      
+      _apiKey = prefs.getString(AppConstants.apiKeyStorageKey);
+      
+      // Web環境ではセッションストレージも確認
+      if (kIsWeb) {
+        final sessionKey = _getSessionStorageKey();
+        if (sessionKey != null && sessionKey.isNotEmpty) {
+          _apiKey = sessionKey;
+          // SharedPreferencesにバックアップ
+          await prefs.setString(AppConstants.apiKeyStorageKey, sessionKey);
+          await prefs.reload();
+        }
+      }
+      
+      if (_apiKey != null && _apiKey!.isNotEmpty) {
+        print('GeminiService: API Key loaded from storage: ${_apiKey!.substring(0, 10)}...');
+        _initializeModel();
+        _isInitialized = true;
+      } else {
+        print('GeminiService: No API Key found.');
+        _model = null; // キーがない場合はモデルをクリア
+        _isInitialized = true;
+      }
+    } catch (e) {
+      print('GeminiService: Initialization error: $e');
+      _model = null;
+      _isInitialized = true;
+    }
+  }
+
+  // Web環境でのセッションストレージ管理
+  String? _getSessionStorageKey() {
+    if (!kIsWeb) return null;
+    try {
+      // Web環境でのみセッションストレージにアクセス
+      final storage = html.window.sessionStorage;
+      return storage['gemini_api_key'];
+    } catch (e) {
+      print('GeminiService: Session storage access error: $e');
+      return null;
+    }
+  }
+
+  void _setSessionStorageKey(String apiKey) {
+    if (!kIsWeb) return;
+    try {
+      final storage = html.window.sessionStorage;
+      storage['gemini_api_key'] = apiKey;
+      print('GeminiService: API Key saved to session storage');
+    } catch (e) {
+      print('GeminiService: Session storage save error: $e');
+    }
+  }
+
+  void _clearSessionStorageKey() {
+    if (!kIsWeb) return;
+    try {
+      final storage = html.window.sessionStorage;
+      storage.remove('gemini_api_key');
+      print('GeminiService: API Key cleared from session storage');
+    } catch (e) {
+      print('GeminiService: Session storage clear error: $e');
     }
   }
 
@@ -53,21 +114,60 @@ class GeminiService {
 
   Future<void> saveApiKey(String apiKey) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      // 1. 確実に書き込みを待つ
-      final success = await prefs.setString(AppConstants.apiKeyStorageKey, apiKey);
-      
-      if (success) {
-        _apiKey = apiKey; // 内部変数を即座に更新
-        await initialize(); // 最新のキーでモデルを再生成
-        print('GeminiService: API Key saved and model re-initialized successfully');
-      } else {
-        print('GeminiService: Failed to save API key');
-        throw Exception('APIキーの保存に失敗しました');
+      // 入力検証
+      if (apiKey.trim().isEmpty) {
+        throw Exception('APIキーが空です');
       }
+
+      final prefs = await SharedPreferences.getInstance();
+      
+      // 1. SharedPreferencesに保存
+      final prefsSuccess = await prefs.setString(AppConstants.apiKeyStorageKey, apiKey);
+      
+      // 2. Web環境ではセッションストレージにも保存
+      if (kIsWeb) {
+        _setSessionStorageKey(apiKey);
+      }
+      
+      // 3. 確実に反映させるためリロード
+      await prefs.reload();
+      await Future.delayed(const Duration(milliseconds: 100));
+      await prefs.reload();
+      
+      // 4. 内部変数を即座に更新
+      _apiKey = apiKey;
+      
+      // 5. モデルを再初期化
+      _initializeModel();
+      
+      // 6. 初期化フラグをリセット
+      _isInitialized = true;
+      
+      print('GeminiService: API Key saved successfully to all storage layers');
+      
     } catch (e) {
       print('GeminiService: Error saving API key: $e');
       throw Exception('APIキーの保存中にエラーが発生しました: $e');
+    }
+  }
+
+  // APIキーをクリアするメソッド
+  Future<void> clearApiKey() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(AppConstants.apiKeyStorageKey);
+      
+      if (kIsWeb) {
+        _clearSessionStorageKey();
+      }
+      
+      _apiKey = null;
+      _model = null;
+      _isInitialized = false;
+      
+      print('GeminiService: API Key cleared from all storage');
+    } catch (e) {
+      print('GeminiService: Error clearing API key: $e');
     }
   }
 
@@ -134,7 +234,17 @@ class GeminiService {
   bool get isConfigured {
     final hasApiKey = _apiKey != null && _apiKey!.isNotEmpty;
     final hasModel = _model != null;
-    print('GeminiService: isConfigured check - hasApiKey: $hasApiKey, hasModel: $hasModel');
-    return hasApiKey && hasModel;
+    final isReady = _isInitialized;
+    
+    print('GeminiService: isConfigured check - hasApiKey: $hasApiKey, hasModel: $hasModel, isReady: $isReady');
+    
+    return hasApiKey && hasModel && isReady;
+  }
+  
+  // セキュリティ向上のため、APIキーの一部のみを返す
+  String? get maskedApiKey {
+    if (_apiKey == null || _apiKey!.isEmpty) return null;
+    if (_apiKey!.length <= 10) return _apiKey;
+    return '${_apiKey!.substring(0, 10)}...';
   }
 }

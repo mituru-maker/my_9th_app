@@ -454,16 +454,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadApiKey() async {
     try {
       await _geminiService.initialize();
+      
       if (mounted && _geminiService.apiKey != null) {
         setState(() {
           _apiKeyController.text = _geminiService.apiKey!;
         });
-        print('SettingsScreen: API Key loaded into text field');
+        print('SettingsScreen: API Key loaded into text field: ${_geminiService.maskedApiKey}');
       } else {
         print('SettingsScreen: No API Key found to load');
       }
     } catch (e) {
       print('SettingsScreen: Error loading API key: $e');
+      if (mounted) {
+        _showErrorDialog('APIキーの読み込みに失敗しました: $e');
+      }
     }
   }
 
@@ -479,14 +483,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       await _geminiService.saveApiKey(_apiKeyController.text.trim());
-      _showSuccessDialog('APIキーを保存しました');
-      Navigator.pop(context, true);
+      
+      // 保存完了を確認
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      if (mounted) {
+        _showSuccessDialog('APIキーを保存しました');
+        Navigator.pop(context, true);
+      }
     } catch (e) {
-      _showErrorDialog('エラーが発生しました: $e');
+      if (mounted) {
+        _showErrorDialog('エラーが発生しました: $e');
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
