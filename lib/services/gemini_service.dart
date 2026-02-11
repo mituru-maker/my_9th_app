@@ -30,17 +30,6 @@ class GeminiService {
       
       _apiKey = prefs.getString(AppConstants.apiKeyStorageKey);
       
-      // Web環境ではセッションストレージも確認
-      if (kIsWeb) {
-        final sessionKey = _getSessionStorageKey();
-        if (sessionKey != null && sessionKey.isNotEmpty) {
-          _apiKey = sessionKey;
-          // SharedPreferencesにバックアップ
-          await prefs.setString(AppConstants.apiKeyStorageKey, sessionKey);
-          await prefs.reload();
-        }
-      }
-      
       if (_apiKey != null && _apiKey!.isNotEmpty) {
         print('GeminiService: API Key loaded from storage: ${_apiKey!.substring(0, 10)}...');
         _initializeModel();
@@ -57,41 +46,6 @@ class GeminiService {
     }
   }
 
-  // Web環境でのセッションストレージ管理
-  String? _getSessionStorageKey() {
-    if (!kIsWeb) return null;
-    try {
-      // Web環境でのみセッションストレージにアクセス
-      final storage = html.window.sessionStorage;
-      return storage['gemini_api_key'];
-    } catch (e) {
-      print('GeminiService: Session storage access error: $e');
-      return null;
-    }
-  }
-
-  void _setSessionStorageKey(String apiKey) {
-    if (!kIsWeb) return;
-    try {
-      final storage = html.window.sessionStorage;
-      storage['gemini_api_key'] = apiKey;
-      print('GeminiService: API Key saved to session storage');
-    } catch (e) {
-      print('GeminiService: Session storage save error: $e');
-    }
-  }
-
-  void _clearSessionStorageKey() {
-    if (!kIsWeb) return;
-    try {
-      final storage = html.window.sessionStorage;
-      storage.remove('gemini_api_key');
-      print('GeminiService: API Key cleared from session storage');
-    } catch (e) {
-      print('GeminiService: Session storage clear error: $e');
-    }
-  }
-
   void _initializeModel() {
     if (_apiKey == null || _apiKey!.isEmpty) return;
 
@@ -99,7 +53,6 @@ class GeminiService {
     final cleanModelName = AppConstants.cleanModelName(modelName);
 
     print('GeminiService: Initializing model with $cleanModelName');
-
     _model = GenerativeModel(
       model: cleanModelName,
       apiKey: _apiKey!,
@@ -124,26 +77,21 @@ class GeminiService {
       // 1. SharedPreferencesに保存
       final prefsSuccess = await prefs.setString(AppConstants.apiKeyStorageKey, apiKey);
       
-      // 2. Web環境ではセッションストレージにも保存
-      if (kIsWeb) {
-        _setSessionStorageKey(apiKey);
-      }
-      
-      // 3. 確実に反映させるためリロード
+      // 2. 確実に反映させるためリロード
       await prefs.reload();
       await Future.delayed(const Duration(milliseconds: 100));
       await prefs.reload();
       
-      // 4. 内部変数を即座に更新
+      // 3. 内部変数を即座に更新
       _apiKey = apiKey;
       
-      // 5. モデルを再初期化
+      // 4. モデルを再初期化
       _initializeModel();
       
-      // 6. 初期化フラグをリセット
+      // 5. 初期化フラグをリセット
       _isInitialized = true;
       
-      print('GeminiService: API Key saved successfully to all storage layers');
+      print('GeminiService: API Key saved successfully');
       
     } catch (e) {
       print('GeminiService: Error saving API key: $e');
@@ -157,15 +105,11 @@ class GeminiService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(AppConstants.apiKeyStorageKey);
       
-      if (kIsWeb) {
-        _clearSessionStorageKey();
-      }
-      
       _apiKey = null;
       _model = null;
       _isInitialized = false;
       
-      print('GeminiService: API Key cleared from all storage');
+      print('GeminiService: API Key cleared');
     } catch (e) {
       print('GeminiService: Error clearing API key: $e');
     }
