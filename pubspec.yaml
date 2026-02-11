@@ -1,5 +1,5 @@
 name: my_9th_app
-description: "A new Flutter project."
+description: "Kitchen Eco AI - AI-powered recipe generator"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -65,7 +65,6 @@ flutter:
 
   # GitHub Pages deployment configuration
   # To build and deploy, run: dart pub global run peanut --extra-args "--base-href /my_9th_app/"
-  publish_to: 'none'
 
   # To add assets to your application, add an assets section, like this:
   # assets:

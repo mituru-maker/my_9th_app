@@ -98,10 +98,16 @@ class GeminiService {
     Uint8List? imageBytes,
     String? imageName,
   }) async {
-    // 実行直前に最新のキーをロードする
-    await initialize();
+    // 実行直前に最新のキーを確認する（初期化はしない）
+    if (_apiKey == null || _apiKey!.isEmpty) {
+      print('GeminiService: No API key found, initializing...');
+      await initialize();
+    }
+    
+    print('GeminiService: Before recipe generation - apiKey: ${_apiKey != null ? "exists" : "null"}, model: ${_model != null ? "exists" : "null"}');
     
     if (_model == null) {
+      print('GeminiService: Model is null, throwing exception');
       throw Exception('APIキーが有効ではありません。設定画面で保存してください。');
     }
 
@@ -121,13 +127,22 @@ class GeminiService {
         contents = [Content.text(prompt)];
       }
 
+      print('GeminiService: Generating recipe...');
       final response = await _model!.generateContent(contents);
-      return response.text ?? 'レスポンスが空でした。';
+      final result = response.text ?? 'レスポンスが空でした。';
+      print('GeminiService: Recipe generated successfully');
+      return result;
     } catch (e) {
+      print('GeminiService: Recipe generation error: $e');
       throw Exception('レシピ生成エラー: $e');
     }
   }
 
   String? get apiKey => _apiKey;
-  bool get isConfigured => _apiKey != null && _apiKey!.isNotEmpty && _model != null;
+  bool get isConfigured {
+    final hasApiKey = _apiKey != null && _apiKey!.isNotEmpty;
+    final hasModel = _model != null;
+    print('GeminiService: isConfigured check - hasApiKey: $hasApiKey, hasModel: $hasModel');
+    return hasApiKey && hasModel;
+  }
 }
