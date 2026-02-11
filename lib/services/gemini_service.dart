@@ -51,31 +51,23 @@ class GeminiService {
     );
   }
 
-  Future<bool> saveApiKey(String apiKey) async {
+  Future<void> saveApiKey(String apiKey) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final result = await prefs.setString(AppConstants.apiKeyStorageKey, apiKey);
+      // 1. 確実に書き込みを待つ
+      final success = await prefs.setString(AppConstants.apiKeyStorageKey, apiKey);
       
-      // Web版での確実な保存のため、複数回リロードと待機
-      await Future.delayed(const Duration(milliseconds: 200));
-      await prefs.reload();
-      await Future.delayed(const Duration(milliseconds: 100));
-      await prefs.reload();
-      
-      // 保存確認
-      final savedKey = prefs.getString(AppConstants.apiKeyStorageKey);
-      if (savedKey == apiKey && savedKey != null) {
-        _apiKey = apiKey;
-        _initializeModel();
-        print('GeminiService: API Key saved successfully and verified: ${savedKey.substring(0, 10)}...');
-        return true;
+      if (success) {
+        _apiKey = apiKey; // 内部変数を即座に更新
+        await initialize(); // 最新のキーでモデルを再生成
+        print('GeminiService: API Key saved and model re-initialized successfully');
       } else {
-        print('GeminiService: API Key save verification failed. Expected: ${apiKey.substring(0, 10)}..., Got: ${savedKey ?? "null"}');
-        return false;
+        print('GeminiService: Failed to save API key');
+        throw Exception('APIキーの保存に失敗しました');
       }
     } catch (e) {
       print('GeminiService: Error saving API key: $e');
-      return false;
+      throw Exception('APIキーの保存中にエラーが発生しました: $e');
     }
   }
 

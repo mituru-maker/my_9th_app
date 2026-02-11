@@ -70,6 +70,7 @@ class _MainScreenState extends State<MainScreen> {
   bool _isLoading = false;
   String _recipeResult = '';
   bool _isConfigured = false;
+  bool _isInitializing = true;
 
   @override
   void initState() {
@@ -78,11 +79,23 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _initializeApp() async {
-    await _geminiService.initialize();
-    setState(() {
-      _isConfigured = _geminiService.isConfigured;
-    });
-    print('MainScreen: App initialized. Is configured: $_isConfigured');
+    try {
+      await _geminiService.initialize();
+      if (mounted) {
+        setState(() {
+          _isConfigured = _geminiService.isConfigured;
+          _isInitializing = false;
+        });
+        print('MainScreen: App initialized. Is configured: $_isConfigured');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isInitializing = false;
+        });
+        print('MainScreen: Initialization failed: $e');
+      }
+    }
   }
 
   Future<void> _pickImage() async {
@@ -202,25 +215,39 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // APIキー状態を直接参照
+    final isConfigured = _geminiService.isConfigured;
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Kitchen Eco AI'),
         actions: [
           IconButton(
             icon: Icon(
-              _isConfigured ? Icons.settings : Icons.settings_outlined,
+              isConfigured ? Icons.settings : Icons.settings_outlined,
               color: Colors.white,
             ),
             onPressed: _navigateToSettings,
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        controller: _scrollController,
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+      body: _isInitializing 
+        ? const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('初期化中...', style: TextStyle(fontSize: 16)),
+              ],
+            ),
+          )
+        : SingleChildScrollView(
+            controller: _scrollController,
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -375,7 +402,7 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ],
             
-            if (!_isConfigured) ...[
+            if (!isConfigured) ...[
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -425,14 +452,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadApiKey() async {
-    await _geminiService.initialize();
-    if (_geminiService.apiKey != null) {
-      setState(() {
-        _apiKeyController.text = _geminiService.apiKey!;
-      });
-      print('SettingsScreen: API Key loaded into text field');
-    } else {
-      print('SettingsScreen: No API Key found to load');
+    try {
+      await _geminiService.initialize();
+      if (mounted && _geminiService.apiKey != null) {
+        setState(() {
+          _apiKeyController.text = _geminiService.apiKey!;
+        });
+        print('SettingsScreen: API Key loaded into text field');
+      } else {
+        print('SettingsScreen: No API Key found to load');
+      }
+    } catch (e) {
+      print('SettingsScreen: Error loading API key: $e');
     }
   }
 
@@ -447,13 +478,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     try {
-      final success = await _geminiService.saveApiKey(_apiKeyController.text.trim());
-      if (success) {
-        _showSuccessDialog('APIキーを保存しました');
-        Navigator.pop(context, true);
-      } else {
-        _showErrorDialog('APIキーの保存に失敗しました');
-      }
+      await _geminiService.saveApiKey(_apiKeyController.text.trim());
+      _showSuccessDialog('APIキーを保存しました');
+      Navigator.pop(context, true);
     } catch (e) {
       _showErrorDialog('エラーが発生しました: $e');
     } finally {
